@@ -200,10 +200,6 @@ class Player(pg.sprite.Sprite):
         self.apply_character()
 
     
-        
-        
-        
-
     def update(self, key_lst: list):
         if key_lst[pg.K_LEFT]: self.rect.x -= self.speed
         if key_lst[pg.K_RIGHT]: self.rect.x += self.speed
@@ -252,12 +248,9 @@ class Grandmother(pg.sprite.Sprite):
         self.raw_image = None
         self.sound = None
 
-        #画像ファイル名と音声ファイル名をリストから取得
-        if Grandmother.next_index >= len(Grandmother.word_list):
-            Grandmother.next_index = 0
+# 画像ファイル名と音声ファイル名をリストから取得
         index = Grandmother.next_index
         Grandmother.next_index += 1
-
         word = Grandmother.word_list[index]
         voice = Grandmother.voice_list[index]
 
@@ -364,6 +357,7 @@ class Kaguya(pg.sprite.Sprite):
             self.stun_timer -= 1
             return
         self.rect.x += self.vx
+
         if random.random() < 0.02:
             # スピードをランダムに変化させる
             self.vx = random.randint(2, 6)
@@ -376,7 +370,11 @@ class Kaguya(pg.sprite.Sprite):
             self.image = pg.transform.scale(self.original_image, (new_size, new_size))
             self.rect = self.image.get_rect(center=self.rect.center)
 
-        if self.rect.left < 320 or self.rect.right > 460:
+        if self.rect.left < 320:
+            self.rect.left = 320
+            self.vx *= -1
+        if self.rect.right > 460:
+            self.rect.right = 460
             self.vx *= -1
     def stun(self, duration=120):
         """隕石に当たった時、一定時間スタン状態にする"""
@@ -491,12 +489,13 @@ class Meteor(pg.sprite.Sprite):
 
 def main():
     pg.init()
-    pg.display.set_caption("かぐや姫 引き留めろ！（オール奥行きVer）")
+    pg.display.set_caption("Back to the Moon")
     screen = pg.display.set_mode((WIDTH, HEIGHT))
     clock = pg.time.Clock()
 
     background = PerspectiveBackground()
     story = StoryDisplay()
+    remaining_font = pg.font.SysFont("ms-gothic", 24)
 
     player = Player()
     kaguya = Kaguya()
@@ -507,14 +506,16 @@ def main():
     # ★ろっく担当：隕石グループ
     meteors = pg.sprite.Group()
 
-    first_moon_radius = 20
-    moon_radius = first_moon_radius
-    end_moon_radius = 400
-    tmr = 0
+    first_moon_radius = 20 # 背景の月の初期サイズ
+    moon_radius = first_moon_radius # 背景の月の現在サイズ
+    end_moon_radius = 400 # 背景の月の最大サイズ（ゲームオーバーになるサイズ）
+    tmr = 0 # ゲーム全体のタイマー変数
 
+    clear_target_hits = 5 # クリアに必要な当てる回数
     hit_counter = 0 # 当たった回数カウンタ
     hit_reset_tmr = 1 # 当たった回数のリセット用タイマー変数
     hit_tmr = 0 # 当たった際のhit_reset_tmrを保存する変数
+    hit_reset_tmr_threshold = 180 # 当たった回数のリセット用タイマーの閾値
     
     # BGM を初期化して再生
     try:
@@ -529,13 +530,17 @@ def main():
         background.update()
         
         if tmr % 3 == 0 and moon_radius < end_moon_radius:
-            moon_radius += 1
+            moon_radius += 0.25 # 月のサイズを徐々に大きくする（ゲームの制限時間を表す）
 
         background.draw(screen, moon_radius)
         draw_moon_progress_bar(screen, moon_radius, first_moon_radius, end_moon_radius)
 
         story.update() #あらすじを更新
         story.draw(screen)
+
+        remaining_count = max(0, len(Grandmother.word_list) - Grandmother.next_index)
+        remaining_text = remaining_font.render(f"残り言弾: {remaining_count}", True, (255, 255, 255))
+        screen.blit(remaining_text, (20, 140))
 
         for event in pg.event.get():
             if event.type == pg.QUIT:
@@ -545,12 +550,11 @@ def main():
             if event.type == pg.KEYDOWN:
                 # スタン中は弾を撃てないようにする
                 if event.key == pg.K_SPACE and player.stun_timer == 0:
-                    grannies.add(Grandmother(player.rect.center))
+                    if Grandmother.next_index < len(Grandmother.word_list):
+                        grannies.add(Grandmother(player.rect.center))
                 # 【なかむらさん担当】Sキーが押されたら操作キャラクターを変更
                 if event.key == pg.K_s:
                     player.switch_character()
-
-                
 
         # ★ろっく担当：一定時間ごとに隕石を出す
         # 数字を小さくすると隕石が多くなる
@@ -568,9 +572,9 @@ def main():
         # 言弾がかぐや姫に当たったらゲームクリア
         if pg.sprite.spritecollide(kaguya, grannies, True):
             hit_counter += 1
-            kaguya.change_size(1.3) 
+            kaguya.change_size(1.2) 
             hit_tmr = hit_reset_tmr
-            if hit_counter >= 3:
+            if hit_counter >= clear_target_hits:
                 print("【ゲームクリア】かぐや姫を引き留めました！")
                 pg.quit()
                 sys.exit()
@@ -587,9 +591,9 @@ def main():
             player.stun(120)
             print("【スタン】おじいさんが隕石に当たりました。しばらく動けません。")
         
-        if hit_reset_tmr - hit_tmr > 180: # 2秒弾が当たらなければ当たった回数カウンタが減る
+        if hit_reset_tmr - hit_tmr > hit_reset_tmr_threshold: # 指定された時間弾が当たらなければ当たった回数カウンタが減る
             hit_counter -= 1
-            kaguya.change_size(0.7)
+            kaguya.change_size(0.8)
             if hit_counter <= 0:
                 hit_counter = 0
                 hit_reset_tmr = 1 
